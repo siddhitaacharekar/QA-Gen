@@ -7,7 +7,6 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>" />
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://js.puter.com/v2/"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -2018,34 +2017,6 @@ async function detectDeployment() {
   }
 }
 
-// ── PUTER.JS (free, keyless AI — works on any deployment) ──
-// Turns the app's messages array into a single prompt string Puter accepts.
-function messagesToPuterPrompt(messages) {
-  const last = messages[messages.length - 1];
-  if (!last) return '';
-  if (typeof last.content === 'string') return last.content;
-  if (Array.isArray(last.content)) {
-    const textPart = last.content.find(c => c.type === 'text');
-    return textPart ? textPart.text : '';
-  }
-  return String(last.content || '');
-}
-
-// Calls Puter and normalizes the reply to the {content:[{text}]} shape the app expects.
-async function callPuter(messages, max_tokens) {
-  const prompt = messagesToPuterPrompt(messages);
-  const resp = await puter.ai.chat(prompt, { model: CONFIG.model, max_tokens });
-  let text = '';
-  if (resp == null) text = '';
-  else if (typeof resp === 'string') text = resp;
-  else if (resp.message && Array.isArray(resp.message.content)) text = resp.message.content.map(c => c.text || '').join('');
-  else if (Array.isArray(resp.content)) text = resp.content.map(c => c.text || '').join('');
-  else if (resp.text) text = resp.text;
-  else text = String(resp);
-  if (!text) throw new Error('Puter returned an empty response (you may need to sign in to Puter, or a usage limit was hit).');
-  return { content: [{ text }] };
-}
-
 async function callAPI(messages, max_tokens = CONFIG.maxTokensGenerate) {
   await detectDeployment();
 
@@ -2063,11 +2034,6 @@ async function callAPI(messages, max_tokens = CONFIG.maxTokensGenerate) {
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error?.message || `API error ${res.status}`);
     return data;
-  }
-
-  // No proxy → use Puter.js: free, no API key, works on any host (Vercel included).
-  if (typeof puter !== 'undefined' && puter?.ai?.chat) {
-    return await callPuter(messages, max_tokens);
   }
 
   // Last resort: direct call. Works keyless ONLY inside a Claude.ai artifact.
