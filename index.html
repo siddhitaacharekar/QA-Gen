@@ -2017,6 +2017,32 @@ async function detectDeployment() {
   }
 }
 
+// User-provided key, used ONLY when there is no server proxy (standalone deploy).
+// Stored in this browser's localStorage — never written into the code or sent anywhere except Anthropic.
+let USER_API_KEY = null;
+try { USER_API_KEY = localStorage.getItem('qagen_api_key') || null; } catch(e) {}
+
+function getApiKey() {
+  if (USER_API_KEY) return USER_API_KEY;
+  const entered = prompt(
+    'This build is running without a backend proxy, so it needs an Anthropic API key to call the AI directly.\n\n' +
+    'Your key is saved only in this browser and is sent only to api.anthropic.com.\n\n' +
+    'Paste your Anthropic API key (starts with sk-ant-):'
+  );
+  if (entered && entered.trim()) {
+    USER_API_KEY = entered.trim();
+    try { localStorage.setItem('qagen_api_key', USER_API_KEY); } catch(e) {}
+    return USER_API_KEY;
+  }
+  return null;
+}
+
+function clearApiKey() {
+  USER_API_KEY = null;
+  try { localStorage.removeItem('qagen_api_key'); } catch(e) {}
+  showToast('Saved API key cleared');
+}
+
 async function callAPI(messages, max_tokens = CONFIG.maxTokensGenerate) {
   await detectDeployment();
 
@@ -2036,15 +2062,26 @@ async function callAPI(messages, max_tokens = CONFIG.maxTokensGenerate) {
     return data;
   }
 
+  // No server proxy available → call Anthropic directly with the user's own key.
+  const key = getApiKey();
+  if (!key) {
+    throw new Error('An Anthropic API key is required to run without a backend proxy. Reload and paste your key, or deploy the api/generate.js proxy so no key is needed.');
+  }
+
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'x-api-key': key,
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({ model: CONFIG.model, max_tokens, messages })
   });
+  if (res.status === 401) {
+    clearApiKey();
+    throw new Error('That API key was rejected (401). It has been cleared — reload and paste a valid key.');
+  }
   const ct = res.headers.get('content-type') || '';
   if (!ct.includes('application/json')) {
     const raw = await res.text();
